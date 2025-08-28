@@ -3,39 +3,50 @@ name: CI Next.js
 on:
   push:
     branches:
-      - master   # exécute le pipeline à chaque push sur main
-  pull_request:  # et aussi sur chaque PR
+      - main
+  pull_request:
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
-      # Étape 1 : Récupérer le code
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Étape 2 : Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # Étape 3 : Installer les dépendances
       - name: Install dependencies
         run: npm install
 
-      # Étape 4 : Build l’application
+      - name: Run ESLint
+        run: npm run lint
+
+  build:
+    runs-on: ubuntu-latest
+    needs: lint # 👉 build ne s'exécute que si lint est OK
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
       - name: Build Next.js
         run: npm run build
 
-      # Étape 5 : Export en statique
       - name: Export static site
         run: npm run export
 
-      # Étape 6 : Sauvegarder les fichiers générés en artifact
-      - name: Upload build artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nextjs-build
+          name: nextjs-out
           path: out/
