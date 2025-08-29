@@ -83,6 +83,13 @@ jobs:
           name: nextjs-out
           path: out/
 
+      - name: Test AWS Credentials
+        run: aws sts get-caller-identity
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
       - name: Deploy Staging Infrastructure & App
         run: |
           cd infra-terraform/staging
@@ -131,6 +138,14 @@ jobs:
         with:
           name: nextjs-out
           path: out/
+
+          
+      - name: Test AWS Credentials
+        run: aws sts get-caller-identity
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Deploy Production Infrastructure & App
         run: |
