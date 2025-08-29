@@ -86,8 +86,8 @@ jobs:
       - name: Deploy Staging Infrastructure & App
         run: |
           cd infra-terraform/staging
-          terraform init
-          terraform apply -auto-approve
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
 
           # Récupérer les outputs Terraform
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
@@ -117,7 +117,7 @@ jobs:
         run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
-          sudo ./aws/install
+          sudo ./aws/install --update
           aws --version
 
       - name: Checkout Terraform repo
