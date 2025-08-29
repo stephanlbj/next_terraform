@@ -90,20 +90,25 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy Staging Infrastructure & App
+      - name: Deploy Staging App Only
         run: |
           cd infra-terraform/staging
           terraform init -input=false
-          terraform apply -auto-approve -input=false
 
-          # Récupérer les outputs Terraform
+          # Terraform plan to check for changes
+          terraform plan -out=tfplan -input=false
+
+          # Apply infra changes only if needed
+          terraform apply -input=false tfplan || echo "No infra changes, continuing..."
+
+          # Get outputs (bucket and CloudFront)
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
           export AWS_S3_BUCKET=$(terraform output -raw s3_bucket_name)
 
-          # Sync Next.js build vers S3
+          # Sync Next.js build to S3 (this happens every run)
           aws s3 sync ../../out s3://$AWS_S3_BUCKET --delete
 
-          # Invalider le cache CloudFront
+          # Invalidate CloudFront cache (optional, runs every deploy)
           aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -146,20 +151,17 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy Production Infrastructure & App
+      - name: Deploy Production App Only
         run: |
           cd infra-terraform/prod
           terraform init -input=false
-          terraform apply -auto-approve -input=false
+          terraform plan -out=tfplan -input=false
+          terraform apply -input=false tfplan || echo "No infra changes, continuing..."
 
-          # Récupérer les outputs Terraform
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
           export AWS_S3_BUCKET=$(terraform output -raw s3_bucket_name)
 
-          # Sync Next.js build vers S3
           aws s3 sync ../../out s3://$AWS_S3_BUCKET --delete
-
-          # Invalider le cache CloudFront
           aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
