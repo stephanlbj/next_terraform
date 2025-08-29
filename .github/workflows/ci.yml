@@ -149,8 +149,8 @@ jobs:
       - name: Deploy Production Infrastructure & App
         run: |
           cd infra-terraform/prod
-          terraform init
-          terraform apply -auto-approve
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
 
           # Récupérer les outputs Terraform
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
