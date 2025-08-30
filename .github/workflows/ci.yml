@@ -16,40 +16,24 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Next.js code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run ESLint
-        run: npm run lint
+      - run: npm install
+      - run: npm run lint
 
   build:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - name: Checkout Next.js code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build Next.js
-        run: npm run build
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - run: npm install
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
         with:
           name: nextjs-out
           path: out/
@@ -59,8 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.7
 
@@ -70,48 +53,67 @@ jobs:
           unzip awscliv2.zip
           sudo ./aws/install --update
 
-      - name: Checkout Terraform repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: stephanlbj/infra_terraform
           path: infra-terraform
 
-      - name: Download Next.js build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: nextjs-out
           path: out/
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Test AWS Credentials
+        run: aws sts get-caller-identity
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy Staging Infrastructure
+      - name: Deploy Staging Infrastructure (Terraform)
         run: |
           cd infra-terraform/staging
           terraform init -input=false
           terraform plan -out=tfplan -input=false
-          terraform apply -input=false tfplan || echo "No infra changes, continuing..."
+          terraform apply -input=false tfplan || echo "No infra changes"
 
-      - name: Deploy Staging App
+      - name: Verify Terraform outputs
         run: |
           cd infra-terraform/staging
+          terraform output -json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy Next.js to S3 & CloudFront
+        run: |
+          cd infra-terraform/staging
+
+          # Récupérer les outputs Terraform
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
           export AWS_S3_BUCKET=$(terraform output -raw s3_bucket_name)
 
+          # Vérifier le contenu avant sync
+          echo "Contenu du build Next.js :"
+          ls -R ../../out
+
+          # Sync Next.js build vers S3
           aws s3 sync ../../out s3://$AWS_S3_BUCKET --delete
+
+          # Invalider le cache CloudFront
           aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
 
   deploy-prod:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.7
 
@@ -121,37 +123,36 @@ jobs:
           unzip awscliv2.zip
           sudo ./aws/install --update
 
-      - name: Checkout Terraform repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: stephanlbj/infra_terraform
           path: infra-terraform
 
-      - name: Download Next.js build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: nextjs-out
           path: out/
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Test AWS Credentials
+        run: aws sts get-caller-identity
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy Production Infrastructure
+      - name: Deploy Production App Only
         run: |
           cd infra-terraform/prod
           terraform init -input=false
           terraform plan -out=tfplan -input=false
-          terraform apply -input=false tfplan || echo "No infra changes, continuing..."
+          terraform apply -input=false tfplan || echo "No infra changes"
 
-      - name: Deploy Production App
-        run: |
-          cd infra-terraform/prod
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
           export AWS_S3_BUCKET=$(terraform output -raw s3_bucket_name)
 
           aws s3 sync ../../out s3://$AWS_S3_BUCKET --delete
           aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
