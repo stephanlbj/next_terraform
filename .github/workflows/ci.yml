@@ -16,40 +16,24 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Next.js code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run ESLint
-        run: npm run lint
+      - run: npm install
+      - run: npm run lint
 
   build:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - name: Checkout Next.js code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build Next.js
-        run: npm run build
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - run: npm install
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
         with:
           name: nextjs-out
           path: out/
@@ -59,56 +43,34 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.7
-
-      - name: Install AWS CLI v2
-        run: |
+      - run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
           sudo ./aws/install --update
-          aws --version
-
-      - name: Checkout Terraform repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: stephanlbj/infra_terraform
           path: infra-terraform
-
-      - name: Download Next.js build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: nextjs-out
           path: out/
-
-      - name: Test AWS Credentials
-        run: aws sts get-caller-identity
+      - run: aws sts get-caller-identity
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Deploy Staging App Only
-        run: |
+      - run: |
           cd infra-terraform/staging
           terraform init -input=false
-
-          # Terraform plan to check for changes
           terraform plan -out=tfplan -input=false
-
-          # Apply infra changes only if needed
-          terraform apply -input=false tfplan || echo "No infra changes, continuing..."
-
-          # Get outputs (bucket and CloudFront)
+          terraform apply -input=false tfplan || echo "No infra changes"
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
           export AWS_S3_BUCKET=$(terraform output -raw s3_bucket_name)
-
-          # Sync Next.js build to S3 (this happens every run)
           aws s3 sync ../../out s3://$AWS_S3_BUCKET --delete
-
-          # Invalidate CloudFront cache (optional, runs every deploy)
           aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -120,47 +82,33 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.7
-
-      - name: Install AWS CLI v2
-        run: |
+      - run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
           sudo ./aws/install --update
-          aws --version
-
-      - name: Checkout Terraform repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: stephanlbj/infra_terraform
           path: infra-terraform
-
-      - name: Download Next.js build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: nextjs-out
           path: out/
-
-      - name: Test AWS Credentials
-        run: aws sts get-caller-identity
+      - run: aws sts get-caller-identity
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Deploy Production App Only
-        run: |
+      - run: |
           cd infra-terraform/prod
           terraform init -input=false
           terraform plan -out=tfplan -input=false
-          terraform apply -input=false tfplan || echo "No infra changes, continuing..."
-
+          terraform apply -input=false tfplan || echo "No infra changes"
           export AWS_CLOUDFRONT_DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
           export AWS_S3_BUCKET=$(terraform output -raw s3_bucket_name)
-
           aws s3 sync ../../out s3://$AWS_S3_BUCKET --delete
           aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
         env:
